@@ -57,9 +57,9 @@ echo
 # 3. Sanity-check the install
 # ------------------------------------------------------------------
 echo "[3/5] Verifying the install..."
-if ! uv run python -c "import config, log, models; from config import load_config; load_config()" >/dev/null 2>&1; then
+if ! uv run python -c "import core.config, core.log, core.models; from core.config import load_config; load_config()" >/dev/null 2>&1; then
     echo "ERROR: Core modules failed to import - see below."
-    uv run python -c "import config, log, models; from config import load_config; load_config()"
+    uv run python -c "import core.config, core.log, core.models; from core.config import load_config; load_config()"
     fail
 fi
 echo "  Core modules import cleanly."

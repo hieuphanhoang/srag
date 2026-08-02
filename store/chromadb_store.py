@@ -199,8 +199,21 @@ class ChromaStore:
         # Ensure collection exists.
         col = self.get_or_create_collection(collection_name)
 
+        # ChromaDB rejects a single upsert call above its max batch size
+        # (SQLite bind-variable limit) — split into sub-batches. A caller
+        # ingesting a large folder in one shot (many files -> thousands of
+        # chunks) would otherwise fail this single call outright, discarding
+        # every chunk built for the whole folder, not just the overflow.
+        max_batch = self._client.get_max_batch_size()
         try:
-            col.upsert(ids=ids, documents=documents, metadatas=metadatas, embeddings=embeddings)  # type: ignore[arg-type]
+            for start in range(0, len(ids), max_batch):
+                end = start + max_batch
+                col.upsert(  # type: ignore[arg-type]
+                    ids=ids[start:end],
+                    documents=documents[start:end],
+                    metadatas=metadatas[start:end],
+                    embeddings=embeddings[start:end],
+                )
             logger.info(
                 "Upserted %d document(s) into collection '%s'.", len(ids), collection_name
             )

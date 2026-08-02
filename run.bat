@@ -1,5 +1,7 @@
 @echo off
 REM SRAG Run Script — Web UI / MCP server entry point
+REM config.yaml and logs/ resolve from the working directory.
+cd /d "%~dp0"
 
 if "%~1"=="" goto :web
 goto :mcp

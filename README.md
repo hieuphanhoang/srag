@@ -16,6 +16,7 @@ No agent framework, LLM calls go directly through the official SDKs, behind a sm
 | Vector store | ChromaDB (embedded, multi-collection) |
 | LLM providers | `anthropic` and `ollama` SDKs directly |
 | Document conversion | `markitdown` CLI (PDF/DOCX/PPTX/XLSX) |
+| OCR for scanned PDF pages | `pypdfium2` (render) + `rapidocr` (ONNX OCR) |
 | Tokenization/chunking | `tiktoken` |
 | AI-assistant integration | `mcp` (Model Context Protocol) SDK |
 
@@ -39,7 +40,7 @@ Open http://localhost:9000 for the dashboard.
 
 ## Features
 
-- **Document Ingestion** — PDF, DOCX, PPTX, XLSX, TXT, MD, EPUB, HTML, PNG/JPG (OCR requires the proprietary ABBYY SDK, not bundled)
+- **Document Ingestion** — PDF (scanned pages are OCR'd automatically), DOCX, PPTX, XLSX, TXT, MD, EPUB, HTML
 - **Semantic Search** — multi-collection ChromaDB (one collection per registered folder) with optional LLM query rewrite and reranking
 - **MCP Server** — exposes `srag_search`, `srag_ingest_file`, `srag_ingest_folder`, `srag_stats`, `srag_health` for AI assistants
 - **Web UI** — Dashboard, Local Folders, Search, Settings
@@ -53,7 +54,7 @@ register folder → queue → scan → [convert → chunk] per file → (optiona
 
 A single background worker processes one folder at a time (FIFO; `prioritize()` can preempt the running job — it pauses and re-queues automatically, safe because re-ingesting is idempotent). For each file:
 
-1. **Convert** — `.txt`/`.md` read directly; PDF/DOCX/PPTX/XLSX go through the `markitdown` **CLI** as a subprocess (deliberately not its Python API, which mis-extracts text — reversed — on some watermarked PDFs); EPUB/HTML use their own converters; image OCR needs the (not bundled) proprietary ABBYY SDK.
+1. **Convert** — `.txt`/`.md` read directly; PDF/DOCX/PPTX/XLSX go through the `markitdown` **CLI** as a subprocess (deliberately not its Python API, which mis-extracts text — reversed — on some watermarked PDFs); EPUB/HTML use their own converters. PDFs are first checked for scanned pages (no text layer, but an image); if any are found, the document is assembled page by page instead — text pages via `pdfminer`, scanned pages rendered with `pypdfium2` and OCR'd with `rapidocr`, all in a subprocess with a timeout. Standalone image files are not ingested.
 2. **Chunk** — token-based splitting (`tiktoken`), 768 tokens with 64 overlap by default.
 3. **Enrich** *(optional, off by default)* — a per-chunk LLM call adds headline/summary metadata.
 4. **Embed** — batched calls to Ollama's embedding API.
@@ -79,19 +80,21 @@ This is a hand-rolled version of a well-known pattern, not a novel one — no fr
 
 ```
 srag/
-├── config.yaml / config.py    # settings + loader
-├── models.py                  # SearchResult, ChunkWithMetadata
-├── log.py                     # logging setup (console + JSON-lines file)
-├── embedding.py                # Ollama embedding client
-├── install.bat / install.sh   # one-time environment setup
-├── run.bat / run.sh            # start the web UI or MCP server
-├── store/                      # ChromaDB wrapper (multi-collection)
-├── ingest/                     # scan → convert → chunk → embed → store (+ sync, retry)
-├── llm/                        # Ollama/Anthropic providers + factory + enrichment
-├── search/                     # query rewrite, result merge, reranking
-├── mcp_server/                 # MCP tools & stdio server
-├── web/                        # FastAPI server, REST API, SPA UI
-└── tests/                      # unit + integration tests (272 total)
+├── config.yaml                 # settings
+├── install.bat / install.sh    # one-time environment setup
+├── run.bat / run.sh             # start the web UI or MCP server
+├── core/                        # foundation modules, imported everywhere else
+│   ├── config.py                #   settings loader
+│   ├── models.py                #   SearchResult, ChunkWithMetadata
+│   ├── log.py                   #   logging setup (console + JSON-lines file)
+│   └── embedding.py              #   Ollama embedding client
+├── store/                       # ChromaDB wrapper (multi-collection)
+├── ingest/                      # scan → convert → chunk → embed → store (+ sync, retry)
+├── llm/                         # Ollama/Anthropic providers + factory + enrichment
+├── search/                      # query rewrite, result merge, reranking
+├── mcp_server/                  # MCP tools & stdio server
+├── web/                         # FastAPI server, REST API, SPA UI
+└── tests/                       # pytest suite
 ```
 
 ## Configuration
@@ -113,6 +116,6 @@ For full documentation, see [USAGE.md](USAGE.md).
 Pull requests welcome! Please run tests before submitting:
 
 ```bash
-uv run pytest tests/ -m "not integration"   # unit tests, no external services
-uv run pytest tests/ -m integration          # integration tests, needs a running Ollama
+uv run pytest tests/ -m "not integration"   # tests that need no external services
+uv run pytest tests/ -m integration          # tests that need a running Ollama
 ```

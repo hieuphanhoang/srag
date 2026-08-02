@@ -13,6 +13,11 @@ dependencies = [
     "mcp[cli]>=1.28.1",
     "ollama>=0.6.2",
     "pdfminer-six==20251230",
+    # OCR for scanned PDF pages (ingest/_pdf_ocr_worker.py): pypdfium2 finds
+    # and renders pages with no text layer, rapidocr reads them. Both are
+    # permissively licensed (Apache-2.0/BSD) — avoid AGPL PyMuPDF here.
+    "pypdfium2>=5.12.1",
+    "rapidocr>=3.9.2",
     "pyyaml>=6.0.3",
     "tiktoken>=0.13.0",
     "uvicorn>=0.50.2",

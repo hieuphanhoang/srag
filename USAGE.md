@@ -66,7 +66,7 @@ Manage document folders for ingestion:
 - **Remove** — unregister a folder and delete its ChromaDB collection
 - **Toggle excluded / single-search** — exclude a folder from search, or restrict search to just that one folder
 
-Supported file formats: PDF, DOCX, PPTX, XLSX, TXT, MD, EPUB, HTML, PNG/JPG (image OCR requires the proprietary ABBYY FineReader SDK, which isn't bundled — image files return a clear error without it, everything else works fully).
+Supported file formats: PDF, DOCX, PPTX, XLSX, TXT, MD, EPUB, HTML. Scanned PDF pages (no text layer, but an image) are OCR'd automatically with the bundled `rapidocr` — no external OCR software needed. Standalone image files (PNG/JPG) are not ingested.
 
 ### Search
 
@@ -130,7 +130,7 @@ Ingest a folder directly, without the web server:
 uv run python -m ingest.pipeline "C:\Data\my_documents"
 ```
 
-Sequence: scan folder → convert files (via the `markitdown` CLI, resolved from this project's own venv) → chunk text (768 tokens, 64 overlap by default) → embed via Ollama → upsert into ChromaDB. Chunk IDs are deterministic (SHA-256 of source path + index + content), so re-running is idempotent — it upserts rather than duplicating.
+Sequence: scan folder → convert files (via the `markitdown` CLI, resolved from this project's own venv; PDFs with scanned pages are OCR'd page by page instead) → chunk text (768 tokens, 64 overlap by default) → embed via Ollama → upsert into ChromaDB. Chunk IDs are deterministic (SHA-256 of source path + index + content), so re-running is idempotent — it upserts rather than duplicating.
 
 ## MCP Server
 
@@ -216,18 +216,18 @@ Environment variable overrides (take precedence over `config.yaml`):
 | `SRAG_LOG_LEVEL` | `logging.level` |
 | `SRAG_SERVER_PORT` | `server.port` |
 
-(The two `*(sic)*` entries have inconsistent capitalization in the actual code — not a typo in this doc, matching what `config.py` actually checks.)
+(The two `*(sic)*` entries have inconsistent capitalization in the actual code — not a typo in this doc, matching what `core/config.py` actually checks.)
 
 ## Running Tests
 
 ```bash
-# Unit tests (no external services needed) - 246 tests
+# Tests that need no external services
 uv run pytest tests/ -m "not integration"
 
-# Integration tests (requires a running Ollama with the configured models pulled) - 26 tests
+# Integration tests (requires a running Ollama with the configured models pulled)
 uv run pytest tests/ -m integration
 
-# All tests - 272 total
+# All tests
 uv run pytest tests/
 ```
 
@@ -235,17 +235,19 @@ uv run pytest tests/
 
 ```
 srag/
-├── config.yaml                # all settings
-├── config.py                  # config loader, ${VAR} expansion, validation
-├── models.py                  # SearchResult, ChunkWithMetadata, generate_chunk_id
-├── log.py                     # logging setup (console + JSON-lines file)
-├── embedding.py                # Ollama embedding client wrapper
-├── install.bat / install.sh   # one-time environment setup (uv, deps, Ollama model, MCP)
-├── run.bat / run.sh            # start the web UI or MCP server
+├── config.yaml                 # all settings
+├── install.bat / install.sh    # one-time environment setup (uv, deps, Ollama model, MCP)
+├── run.bat / run.sh              # start the web UI or MCP server
+├── core/                         # foundation modules, imported everywhere else
+│   ├── config.py                  # config loader, ${VAR} expansion, validation
+│   ├── models.py                  # SearchResult, ChunkWithMetadata, generate_chunk_id
+│   ├── log.py                     # logging setup (console + JSON-lines file)
+│   └── embedding.py                # Ollama embedding client wrapper
 ├── store/
 │   └── chromadb_store.py      # ChromaDB wrapper, multi-collection search + merge
 ├── ingest/
 │   ├── converter.py           # markitdown CLI subprocess conversion (PDF/DOCX/PPTX/XLSX/...)
+│   ├── _pdf_ocr_worker.py     # subprocess: find + OCR scanned PDF pages (pypdfium2, rapidocr)
 │   ├── chunker.py             # token-based text chunking
 │   ├── scanner.py             # file discovery, standalone or registry-backed
 │   ├── folder_registry.py     # SQLite folder + file tracking
@@ -271,5 +273,5 @@ srag/
 │   ├── dependencies.py         # shared singletons, lifespan, run_search()
 │   ├── ingest_queue.py         # background worker: sequential ingest with prioritize()
 │   └── static/                 # SPA (index.html, style.css, app.js)
-└── tests/                      # 246 unit + 26 integration tests
+└── tests/                      # pytest suite
 ```

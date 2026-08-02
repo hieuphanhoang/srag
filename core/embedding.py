@@ -145,7 +145,7 @@ def get_embedder(url: str | None = None, model: str | None = None) -> "Embedder"
     Parameters follow :class:`Embedder.__init__`.
     """
     import os  # noqa: local import for lazy loading
-    from config import load_config
+    from core.config import load_config
 
     cfg = load_config()
     _url = url or os.environ.get("OLLAMA_URL") or cfg.ollama_url

@@ -1,16 +1,19 @@
 """SRAG Document Converter Manager — Phase 2 implementation (DD-05, DD-06).
 
 Manages multi-format document conversion with a pluggable converter registry.
-Supports PDF, DOCX, TXT, Markdown, EPUB, HTML, and image-based OCR via ABBYY.
+Supports PDF (with automatic OCR of scanned pages via pypdfium2/rapidocr),
+DOCX, PPTX, XLSX, TXT, Markdown, EPUB, HTML, and image-based OCR via rapidocr.
 """
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import shutil
 import subprocess
 import sys
+import tempfile
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
@@ -55,6 +58,41 @@ def _convert_via_markitdown_cli(file_path: str | Path, timeout: float = 120.0) -
     if proc.returncode != 0:
         return False, proc.stderr.strip() or f"markitdown exited with code {proc.returncode}"
     return True, proc.stdout
+
+
+def _run_pdf_ocr_worker(file_path: str | Path, timeout: float = 900.0) -> tuple[bool, dict[str, Any] | str]:
+    """Run the scanned-page worker on *file_path*. Returns (success, result_or_error).
+
+    The result is ``{"scanned_pages": [...], "text": str | None}`` (see
+    ``_pdf_ocr_worker.py``); ``text`` is only set when some page needed OCR.
+    A generous default timeout accommodates large scanned books, which run
+    noticeably slower than text-layer extraction.
+
+    The worker writes its result to a temp file rather than stdout — rapidocr
+    prints its own status chatter straight to stdout, which would otherwise
+    get mixed into the result.
+    """
+    worker = Path(__file__).with_name("_pdf_ocr_worker.py")
+    fd, out_path = tempfile.mkstemp(suffix=".json")
+    os.close(fd)
+    try:
+        proc = subprocess.run(
+            [sys.executable, str(worker), str(file_path), out_path],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout,
+        )
+        if proc.returncode != 0:
+            return False, proc.stderr.strip() or f"PDF OCR worker exited with code {proc.returncode}"
+        return True, json.loads(Path(out_path).read_text(encoding="utf-8"))
+    except subprocess.TimeoutExpired:
+        return False, f"PDF OCR conversion timed out after {timeout:.0f}s"
+    except Exception as exc:
+        return False, str(exc)
+    finally:
+        Path(out_path).unlink(missing_ok=True)
 
 
 # ---------------------------------------------------------------------------
@@ -174,18 +212,40 @@ class TextConverter(DocumentConverter):
 
 
 class PDFConverter(DocumentConverter):
-    """PDF document converter using the markitdown CLI.
+    """PDF document converter: markitdown CLI, with OCR for scanned pages.
 
-    Routed through the CLI (not markitdown's Python API) — the API is known
-    to mis-extract text (reversed order) on some watermarked PDFs.
+    A subprocess worker first checks for scanned pages (no text layer, but an
+    image). PDFs without any are converted by the markitdown CLI exactly as
+    before — routed through the CLI (not markitdown's Python API), which is
+    known to mis-extract text (reversed order) on some watermarked PDFs.
+    PDFs with scanned pages come back from the worker assembled page by
+    page: text-layer pages via pdfminer, scanned pages OCR'd with rapidocr
+    (pure Python/ONNX — no external installer or license).
+
+    The worker runs in a subprocess of this project's own venv (FD-24/25
+    pattern) so a crash or a long OCR pass on one bad PDF can be timed out
+    without taking the whole ingest pipeline down with it. If the worker
+    fails, conversion falls back to the markitdown CLI alone.
     """
 
-    def __init__(self, enable_ocr: bool = False) -> None:
+    def __init__(self, enable_ocr: bool = True) -> None:
         # enable_ocr is accepted for backward compatibility with declarative
-        # registration configs; OCR itself isn't implemented (no ABBYY SDK).
+        # registration configs; OCR is decided automatically per page, so
+        # this flag has no effect either way.
         super().__init__("pdf")
 
     def convert(self, file_path: str | Path) -> ConversionResult:
+        ok, ocr_result = _run_pdf_ocr_worker(file_path)
+        if ok and ocr_result["scanned_pages"]:
+            return ConversionResult(
+                success=True,
+                text=ocr_result["text"],
+                format=DocFormat.PDF,
+                metadata={"ocr_engine": "rapidocr", "ocr_pages": ocr_result["scanned_pages"]},
+            )
+        if not ok:
+            logger.warning("Scanned-page check failed for %s, using text layer only: %s", file_path, ocr_result)
+
         success, text_or_error = _convert_via_markitdown_cli(file_path)
         if not success:
             return ConversionResult(success=False, error=text_or_error, format=DocFormat.PDF)
@@ -247,39 +307,43 @@ class XLSXConverter(DocumentConverter):
 
 
 class ImageOCRConverter(DocumentConverter):
-    """Image-based OCR converter using ABBYY FineReader SDK.
+    """Image-based OCR converter using rapidocr.
 
     Supports PNG, JPG, JPEG formats for optical character recognition.
+    rapidocr is pure Python/ONNX — no external installer, service, or
+    license required (unlike the previously planned ABBYY FineReader SDK,
+    which was never actually available and left this converter permanently
+    stubbed out).
     """
 
     def __init__(self) -> None:
         super().__init__("image_ocr")
-        self._abbyy_available = False
+        self._engine = None
         self._try_import()
 
     def _try_import(self) -> None:
         try:
-            import ABBYYFatReader as _fr  # noqa: F401
-            self._abbyy_available = True
-        except ImportError:
-            logger.warning("ABBYY FatReader SDK not found; image OCR disabled.")
+            from rapidocr import RapidOCR
+            self._engine = RapidOCR()
+        except Exception as exc:
+            logger.warning("rapidocr not available; image OCR disabled: %s", exc)
 
     def convert(self, file_path: str | Path) -> ConversionResult:
-        if not self._abbyy_available:
+        if self._engine is None:
             return ConversionResult(
                 success=False,
-                error="ABBYY FineReader SDK is required for image OCR.",
+                error="rapidocr is required for image OCR.",
                 format=DocFormat.IMAGE,
             )
 
         try:
-            # Placeholder: real implementation would use ABBYFFatReader API.
-            # For now, return a placeholder result.
+            result = self._engine(str(file_path))
+            texts = result.txts if result is not None and result.txts else ()
             return ConversionResult(
                 success=True,
-                text=f"[OCR text from {Path(file_path).name}]",  # type: ignore[arg-type]
+                text="\n".join(texts),
                 format=DocFormat.IMAGE,
-                metadata={"ocr_engine": "abbyy_fine_reader"},
+                metadata={"ocr_engine": "rapidocr", "line_count": len(texts)},
             )
         except Exception as exc:
             return ConversionResult(success=False, error=str(exc), format=DocFormat.IMAGE)
@@ -399,22 +463,33 @@ class ConverterManager:
     >>> result = mgr.convert("/path/to/doc.pdf")
     """
 
-    # Default extension-to-converter mapping.
-    DEFAULT_EXTENSIONS: dict[str, type[DocumentConverter]] = {
-        ".pdf": PDFConverter,
-        ".docx": DOCXConverter,
-        ".doc": DOCXConverter,
-        ".pptx": PPTXConverter,
-        ".xlsx": XLSXConverter,
-        ".txt": TextConverter,
-        ".md": TextConverter,
-        ".markdown": TextConverter,
-        ".epub": EPUBConverter,
-        ".html": HTMLConverter,
-        ".htm": HTMLConverter,
-        ".png": ImageOCRConverter,
-        ".jpg": ImageOCRConverter,
-        ".jpeg": ImageOCRConverter,
+    # Default extension -> (converter, format) mapping. The single source of
+    # truth for which files are ingested — the folder scanner derives its
+    # extension list from this table too.
+    #
+    # The format is explicit because DocFormat's enum *values* don't always
+    # match the raw extension string (DocFormat.DOCX == "docx", not "doc") —
+    # guessing via ``DocFormat(ext.lstrip("."))`` silently fails for those
+    # and previously left .doc permanently unroutable.
+    #
+    # Standalone .png/.jpg/.jpeg are deliberately NOT registered here —
+    # image handling is in scope only for pages *embedded in a PDF*
+    # (PDFConverter OCRs those automatically). ImageOCRConverter still
+    # exists and works (rapidocr-backed) for callers that explicitly
+    # register it via register_by_declarative()/register_converter(), it
+    # just isn't wired up by default.
+    DEFAULT_EXTENSIONS: dict[str, tuple[type[DocumentConverter], DocFormat]] = {
+        ".pdf": (PDFConverter, DocFormat.PDF),
+        ".docx": (DOCXConverter, DocFormat.DOCX),
+        ".doc": (DOCXConverter, DocFormat.DOCX),
+        ".pptx": (PPTXConverter, DocFormat.PPTX),
+        ".xlsx": (XLSXConverter, DocFormat.XLSX),
+        ".txt": (TextConverter, DocFormat.TXT),
+        ".md": (TextConverter, DocFormat.MD),
+        ".markdown": (TextConverter, DocFormat.MD),
+        ".epub": (EPUBConverter, DocFormat.EPUB),
+        ".html": (HTMLConverter, DocFormat.HTML),
+        ".htm": (HTMLConverter, DocFormat.HTML),
     }
 
     def __init__(self) -> None:
@@ -429,22 +504,17 @@ class ConverterManager:
 
     def _register_defaults(self) -> None:
         """Register all default converters."""
-        for ext, conv_cls in self.DEFAULT_EXTENSIONS.items():
+        for ext, (conv_cls, fmt) in self.DEFAULT_EXTENSIONS.items():
             try:
-                instance = conv_cls()
-                fmt = self._ext_to_format(ext)
-                if fmt is not None:
-                    self.register_converter(fmt, instance)
+                self.register_converter(fmt, conv_cls())
+                self._ext_map[ext] = fmt
             except Exception as exc:
                 logger.warning("Failed to register default converter %s: %s", conv_cls.__name__, exc)
 
     @staticmethod
     def _ext_to_format(ext: str) -> DocFormat | None:
-        ext_lower = ext.lower().lstrip(".")
-        try:
-            return DocFormat(ext_lower)
-        except ValueError:
-            return None
+        entry = ConverterManager.DEFAULT_EXTENSIONS.get(ext.lower())
+        return entry[1] if entry else None
 
     def register_converter(self, fmt: DocFormat, converter: DocumentConverter) -> None:
         """Register *converter* for documents of format *fmt*."""
@@ -561,18 +631,7 @@ class ConverterManager:
 
     def _infer_format(self, path: Path) -> DocFormat | None:
         """Infer :py:class:`DocFormat` from file extension."""
-        ext = path.suffix.lower()
-        fmt = self._ext_to_format(ext)
-        if fmt is not None:
-            return fmt
-
-        # Fallback: check by name for common variants.
-        name_map = {
-            ".doc": DocFormat.DOCX,
-            ".htm": DocFormat.HTML,
-            ".markdown": DocFormat.MD,
-        }
-        return name_map.get(ext)
+        return self._ext_to_format(path.suffix.lower())
 
 
 __all__ = [

@@ -16,43 +16,20 @@ from typing import Any
 
 from dataclasses import dataclass, field
 
-from ingest.converter import DocFormat
+from ingest.converter import ConverterManager, DocFormat
 from ingest.folder_registry import FileEntry, FileEntry as _FE, FolderConfig, FolderRegistry
 
 logger = logging.getLogger(__name__)
 
-# Supported extensions (lowercase).
-SUPPORTED_EXTENSIONS: set[str] = {
-    ".pdf",
-    ".docx",
-    ".doc",
-    ".txt",
-    ".md",
-    ".markdown",
-    ".epub",
-    ".html",
-    ".htm",
-    ".png",
-    ".jpg",
-    ".jpeg",
+# Extension -> format mapping used by scan_folder() below, taken from the
+# converter's default table so the scanner only picks up files that have a
+# converter registered.
+_EXT_TO_DOC_FORMAT: dict[str, DocFormat] = {
+    ext: fmt for ext, (_, fmt) in ConverterManager.DEFAULT_EXTENSIONS.items()
 }
 
-# DocFormat has no `from_extension` classmethod — this is the extension -> format
-# mapping used by scan_folder() below (kept in sync with SUPPORTED_EXTENSIONS).
-_EXT_TO_DOC_FORMAT: dict[str, DocFormat] = {
-    ".pdf": DocFormat.PDF,
-    ".docx": DocFormat.DOCX,
-    ".doc": DocFormat.DOCX,
-    ".txt": DocFormat.TXT,
-    ".md": DocFormat.MD,
-    ".markdown": DocFormat.MD,
-    ".epub": DocFormat.EPUB,
-    ".html": DocFormat.HTML,
-    ".htm": DocFormat.HTML,
-    ".png": DocFormat.IMAGE,
-    ".jpg": DocFormat.IMAGE,
-    ".jpeg": DocFormat.IMAGE,
-}
+# Supported extensions (lowercase).
+SUPPORTED_EXTENSIONS: set[str] = set(_EXT_TO_DOC_FORMAT)
 
 
 @dataclass

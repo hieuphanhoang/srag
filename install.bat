@@ -53,10 +53,10 @@ REM ------------------------------------------------------------------
 REM 3. Sanity-check the install
 REM ------------------------------------------------------------------
 echo [3/5] Verifying the install...
-uv run python -c "import config, log, models; from config import load_config; load_config()" >nul 2>&1
+uv run python -c "import core.config, core.log, core.models; from core.config import load_config; load_config()" >nul 2>&1
 if errorlevel 1 (
     echo ERROR: Core modules failed to import - see below.
-    uv run python -c "import config, log, models; from config import load_config; load_config()"
+    uv run python -c "import core.config, core.log, core.models; from core.config import load_config; load_config()"
     goto :fail
 )
 echo   Core modules import cleanly.

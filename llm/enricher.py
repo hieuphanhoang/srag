@@ -122,7 +122,7 @@ class EnrichmentClient:
         # QueryRewriter/Reranker use for `llm.search`/`llm.rerank`.
         spec = None
         try:
-            from config import load_config
+            from core.config import load_config
             spec = load_config().llm_enrichment
         except Exception as exc:
             logger.debug("Failed to load config for enrichment client: %s", exc)

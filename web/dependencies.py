@@ -20,8 +20,8 @@ from typing import Any, AsyncIterator
 
 from fastapi import FastAPI
 
-from config import Config, load_config
-from embedding import Embedder, get_embedder as _build_embedder
+from core.config import Config, load_config
+from core.embedding import Embedder, get_embedder as _build_embedder
 from ingest.converter import ConverterManager
 from ingest.folder_registry import FolderRegistry, collection_name_for_path
 from store.chromadb_store import ChromaStore, SearchResult
