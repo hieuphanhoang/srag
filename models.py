@@ -14,6 +14,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass, field
+from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -126,21 +127,49 @@ class EnrichedMetadata:
 
 @dataclass
 class SearchResult:
-    """A single search result with distance and optional rerank score."""
-    chunk_id: str
-    source: str
-    content: str
-    distance: float  # embedding cosine / L2 distance
-    rerank_score: Optional[float] = None  # cross-encoder reranking score
+    """A single search result with distance and optional rerank score.
+
+    Attributes:
+        text: The text content of the chunk (alias for 'content').
+        metadata: Dict of source metadata (source, chunk_index, etc.).
+        distance: Embedding cosine/L2 distance (lower = more similar).
+        rerank_score: Optional cross-encoder reranking score.
+        collection: Optional ChromaDB collection name.
+        _sources: Internal list of source matches for dedup transparency.
+    """
+    # Primary interface fields
+    text: str = ""
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    distance: float = 0.0
+    rerank_score: Optional[float] = None
+
+    # Optional fields
+    chunk_id: str = ""
+    source: str = ""
+    content: str = ""
+    collection: str = ""
+    _sources: Any = field(default=None)
+
+    def __post_init__(self) -> None:
+        """Set aliases for compatibility."""
+        if not self.chunk_id and self.metadata.get("source"):
+            self.chunk_id = f"{self.metadata['source']}:{self.metadata.get('chunk_index', 0)}"
+        if not self.source and self.metadata.get("source"):
+            self.source = self.metadata["source"]
+        if not self.content and self.text:
+            self.content = self.text
+        if self.metadata is None:
+            self.metadata = {}
 
     def to_dict(self) -> Dict[str, Any]:
         """Serialize to dict."""
         result: Dict[str, Any] = {
-            "chunk_id": self.chunk_id,
-            "source": self.source,
-            "content": self.content,
+            "text": self.text or self.content,
+            "metadata": dict(self.metadata),
             "distance": self.distance,
         }
+        if self.collection:
+            result["collection"] = self.collection
         if self.rerank_score is not None:
             result["rerank_score"] = self.rerank_score
         return result
@@ -148,13 +177,70 @@ class SearchResult:
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> SearchResult:
         """Deserialize from dict."""
+        metadata = data.get("metadata", {}) or {}
         return cls(
-            chunk_id=data["chunk_id"],
-            source=data["source"],
-            content=data["content"],
-            distance=data["distance"],
+            text=data.get("text", ""),
+            metadata=metadata,
+            distance=float(data.get("distance", 0.0)),
             rerank_score=data.get("rerank_score"),
+            chunk_id=data.get("chunk_id", f"{metadata.get('source', '')}:{metadata.get('chunk_index', 0)}"),
+            source=metadata.get("source", data.get("source", "")),
+            content=data.get("content", data.get("text", "")),
+            collection=data.get("collection", ""),
         )
+
+
+# ---------------------------------------------------------------------------
+# ChunkWithMetadata & generate_chunk_id (FD-08, FD-10)
+# ---------------------------------------------------------------------------
+
+
+def generate_chunk_id(source: str, chunk_index: int, content: str) -> str:
+    """Generate a deterministic chunk ID from source + index + content.
+
+    Same inputs always produce the same ID; different inputs produce different IDs.
+    """
+    raw = f"{source}:{chunk_index}:{content}"
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
+
+
+@dataclass
+class ChunkWithMetadata:
+    """Chunk with its full metadata (FD-08).
+
+    Attributes:
+        source: Source file / document path.
+        chunk_index: Index of this chunk within the source.
+        content: The text content of the chunk.
+        embedding: Optional embedding vector.
+        enriched_text: Optional LLM-generated enrichment.
+        start_offset: Byte offset in original document (optional).
+        end_offset: End byte offset (optional).
+    """
+    source: str
+    chunk_index: int = 0
+    content: str = ""
+    embedding: Optional[List[float]] = None
+    enriched_text: Optional[str] = None
+    start_offset: Optional[int] = None
+    end_offset: Optional[int] = None
+
+    @property
+    def id(self) -> str:
+        """Generate a deterministic chunk ID."""
+        return generate_chunk_id(self.source, self.chunk_index, self.content)
+
+
+# ---------------------------------------------------------------------------
+# Task Status / Ingester Models (web layer)
+# ---------------------------------------------------------------------------
+
+class TaskStatus(str, Enum):
+    """Ingestion task status."""
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
 
 
 # ---------------------------------------------------------------------------
@@ -198,3 +284,20 @@ class Folder:
             chunk_count=data.get("chunk_count", 0),
             enabled=data.get("enabled", True),
         )
+
+
+# Alias for compatibility (must be after Folder class definition)
+FolderInfo = Folder
+
+
+__all__ = [
+    "Chunk",
+    "ChunkMetadata", 
+    "ChunkWithMetadata",
+    "SearchResult",
+    "EnrichedMetadata",
+    "Folder",
+    "FolderInfo",
+    "TaskStatus",
+    "generate_chunk_id",
+]

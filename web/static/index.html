@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>SRAG — Semantic Retrieval</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+
+  <header class="topbar">
+    <div class="wordmark">
+      <span class="stamp">SRAG</span>
+      <span class="tagline">Semantic Retrieval</span>
+    </div>
+    <div class="topbar-stats">
+      <span class="stat"><span class="conn-dot" id="connDot"></span><span id="connLabel">Connecting…</span></span>
+      <span class="stat"><b id="statFolders">—</b> folders</span>
+      <span class="stat"><b id="statChunks">—</b> chunks</span>
+      <span class="stat"><b id="statCollections">—</b> collections</span>
+    </div>
+  </header>
+
+  <div class="app-shell">
+    <nav class="nav-rail">
+      <div class="nav-item active" data-page="dashboard"><span class="glyph">▤</span> Dashboard</div>
+      <div class="nav-item" data-page="folders"><span class="glyph">▥</span> Local Folders</div>
+      <div class="nav-item" data-page="search"><span class="glyph">◎</span> Search</div>
+      <div class="nav-item" data-page="settings"><span class="glyph">⚙</span> Settings</div>
+    </nav>
+
+    <main class="main">
+
+      <!-- ═══ Dashboard ═══════════════════════════════════ -->
+      <section class="page active" id="page-dashboard">
+        <div class="page-head">
+          <h1>Dashboard</h1>
+          <span class="sub">Overview of registered folders and indexed collections</span>
+        </div>
+
+        <div class="card-row">
+          <div class="index-card" data-label="Folders">
+            <div class="value" id="cardFolders">—</div>
+            <div class="footnote">registered for ingestion</div>
+          </div>
+          <div class="index-card" data-label="Total Chunks">
+            <div class="value" id="cardChunks">—</div>
+            <div class="footnote">across registered folders</div>
+          </div>
+          <div class="index-card" data-label="Collections">
+            <div class="value" id="cardCollections">—</div>
+            <div class="footnote">ChromaDB collections</div>
+          </div>
+          <div class="index-card" data-label="ChromaDB">
+            <div class="value" id="cardChroma">—</div>
+            <div class="footnote" id="cardChromaNote">checking connection…</div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2>Collections</h2>
+          <div id="collectionsTable">
+            <div class="empty-state">Loading…</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══ Local Folders ═══════════════════════════════ -->
+      <section class="page" id="page-folders">
+        <div class="page-head">
+          <h1>Local Folders</h1>
+          <span class="sub">Register a folder to convert, chunk, embed, and index its files</span>
+        </div>
+
+        <div class="panel">
+          <h2>Register a folder</h2>
+          <form id="registerForm" class="field-row">
+            <input type="text" id="folderPathInput" class="grow" placeholder="C:\Data\my_documents" required />
+            <button type="submit" class="primary" id="registerBtn">Register</button>
+          </form>
+          <div class="error-text" id="registerError" style="display:none"></div>
+        </div>
+
+        <div class="panel">
+          <h2>Registered folders</h2>
+          <div id="foldersList"><div class="empty-state">Loading…</div></div>
+        </div>
+      </section>
+
+      <!-- ═══ Search ══════════════════════════════════════ -->
+      <section class="page" id="page-search">
+        <div class="page-head">
+          <h1>Search</h1>
+          <span class="sub">Query every indexed collection at once, ranked by embedding distance</span>
+        </div>
+
+        <form id="searchForm">
+          <div class="search-bar">
+            <input type="search" id="queryInput" class="grow" placeholder="What are you looking for?" required autocomplete="off" />
+            <button type="submit" class="primary" id="searchBtn">Search</button>
+          </div>
+          <div class="search-options">
+            <label class="checkbox"><input type="checkbox" id="rewriteCheck" /> Rewrite query</label>
+            <label class="checkbox"><input type="checkbox" id="rerankCheck" /> Rerank results</label>
+            <div class="field-row">
+              <span class="folder-stat">Top-K</span>
+              <input type="number" id="topKInput" value="10" min="1" max="100" style="width:60px" />
+            </div>
+          </div>
+        </form>
+
+        <div id="searchResults"><div class="empty-state"><div class="big">Nothing searched yet</div>Try a phrase you know appears in one of your documents.</div></div>
+      </section>
+
+      <!-- ═══ Settings ════════════════════════════════════ -->
+      <section class="page" id="page-settings">
+        <div class="page-head">
+          <h1>Settings</h1>
+          <span class="sub">Current configuration and runtime search behavior</span>
+        </div>
+
+        <div class="settings-grid">
+          <div class="panel">
+            <h2>Configuration</h2>
+            <dl class="kv-list" id="configList">
+              <dt>Loading…</dt>
+            </dl>
+          </div>
+
+          <div class="panel">
+            <h2>Search behavior</h2>
+            <div class="setting-row">
+              <div>
+                <div class="label">Query rewriting</div>
+                <div class="desc">Expand the query with LLM-generated variants before searching</div>
+              </div>
+              <label class="switch"><input type="checkbox" id="cfgRewrite" /><span class="track"></span></label>
+            </div>
+            <div class="setting-row">
+              <div>
+                <div class="label">Reranking</div>
+                <div class="desc">Reorder merged results with an LLM relevance judge</div>
+              </div>
+              <label class="switch"><input type="checkbox" id="cfgRerank" /><span class="track"></span></label>
+            </div>
+            <div class="setting-row">
+              <div>
+                <div class="label">Final result count</div>
+                <div class="desc">How many results the search page returns by default</div>
+              </div>
+              <input type="number" id="cfgFinalK" min="1" max="100" />
+            </div>
+            <div class="save-note">Runtime only — changes here are not written to config.yaml.</div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

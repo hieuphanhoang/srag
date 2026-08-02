@@ -2,9 +2,9 @@ chromadb_path: "${LOCALAPPDATA}/srag/chromadb"
 chromadb_tenant: "default_tenant"
 chromadb_database: "default_database"
 ollama_url: "http://localhost:11434"
-embedding_model: "qwen3-embedding"
+embedding_model: "qwen3-embedding-8b"
 server:
-  port: 9001
+  port: 9000
 mcp:
   transport: "stdio"
 search:
@@ -17,10 +17,10 @@ chunking:
   max_tokens: 768
   overlap: 64
 llm:
-  enrichment: "anthropic/claude-sonnet-5"
-  rewrite: "ollama/qwen3:4b"
-  rerank: "anthropic/claude-sonnet-5"
-  eval: "anthropic/claude-sonnet-5"
+  enrichment: "ollama/qwen3-5-9b"
+  rewrite: "ollama/qwen3-5-9b"
+  rerank: "ollama/qwen3-5-9b"
+  eval: "ollama/qwen3-5-9b"
 anthropic:
   base_url: ""
 enrichment:
