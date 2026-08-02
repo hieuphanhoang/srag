@@ -188,16 +188,27 @@ def get_logger(
 # Convenience: get root logger with standard setup
 # ---------------------------------------------------------------------------
 
+_ROOT_LOGGING_CONFIGURED = False
+
+
 def setup_logging(
     level: str = DEFAULT_LOG_LEVEL,
     log_file: str | None = None,
     enable_console: bool = True,
     enable_file: bool = True,
 ) -> logging.Logger:
-    """Set up the root logger with standard handlers.
+    """Set up the true Python root logger with standard handlers.
 
-    This is a convenience function for scripts that need a quick setup
-    (e.g., run.py, init_db.py). For web apps and libraries, use get_logger() instead.
+    Every module in this codebase does `logging.getLogger(__name__)` (e.g.
+    "ingest.converter", "web.routes") — none of those names are children of
+    a logger named "srag", so attaching handlers there (as an earlier
+    version of this function did) would silently miss every module's
+    output. Handlers must go on the actual root logger (`logging.getLogger()`,
+    no name) since that's what every module logger propagates to by default.
+
+    Idempotent: calling this more than once (e.g. `create_app()` running
+    twice under `uvicorn --factory`, which imports the module *and* calls
+    the factory) does not add duplicate handlers / duplicate log lines.
 
     Args:
         level: Logging level ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL").
@@ -206,10 +217,15 @@ def setup_logging(
         enable_file: Whether to add a file handler.
 
     Returns:
-        The root logger (named "srag").
+        The root logger.
     """
-    root_logger = logging.getLogger("srag")
+    global _ROOT_LOGGING_CONFIGURED
+    root_logger = logging.getLogger()
     root_logger.setLevel(level)  # type: ignore[arg-type]
+
+    if _ROOT_LOGGING_CONFIGURED:
+        return root_logger
+    _ROOT_LOGGING_CONFIGURED = True
 
     if enable_console:
         ch = logging.StreamHandler(sys.stdout)

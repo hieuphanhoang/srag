@@ -29,7 +29,9 @@ from __future__ import annotations
 import os
 import re
 import copy
+import sys
 from dataclasses import dataclass, field
+from dataclasses import fields as dataclasses_fields
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -37,20 +39,37 @@ import yaml
 
 
 # ---------------------------------------------------------------------------
-# DD-04: Default paths (LOCALAPPDATA-based)
+# DD-04: Default paths (per-user local-app-data directory, cross-platform)
 # ---------------------------------------------------------------------------
+def _local_app_dir() -> str:
+    """Return this platform's per-user local-app-data directory.
+
+    Windows: $LOCALAPPDATA (or ~\\AppData\\Local if unset).
+    macOS:   ~/Library/Application Support.
+    Linux:   $XDG_DATA_HOME (or ~/.local/share per the XDG base dir spec).
+
+    config.yaml's `${LOCALAPPDATA}` references resolve through this same
+    function (see _expand_env_vars) - without it, that expansion falls back
+    to os.environ.get("LOCALAPPDATA", "") on macOS/Linux, i.e. an *empty
+    string*, silently turning "${LOCALAPPDATA}/srag/chromadb" into
+    "/srag/chromadb" (filesystem root - unwritable by a normal user).
+    """
+    localappdir = os.environ.get("LOCALAPPDATA")
+    if localappdir:
+        return localappdir
+    if sys.platform == "darwin":
+        return str(Path.home() / "Library" / "Application Support")
+    if sys.platform.startswith("win"):
+        return str(Path.home() / "AppData" / "Local")
+    return os.environ.get("XDG_DATA_HOME") or str(Path.home() / ".local" / "share")
+
+
 def _default_chromadb_path() -> str:
-    localappdir = os.environ.get("LOCALAPPDATA", "")
-    if not localappdir:
-        localappdir = os.path.join(Path.home(), "AppData", "Local")
-    return os.path.join(localappdir, "srag", "chromadb")
+    return os.path.join(_local_app_dir(), "srag", "chromadb")
 
 
 def _default_folders_db_path() -> str:
-    localappdir = os.environ.get("LOCALAPPDATA", "")
-    if not localappdir:
-        localappdir = os.path.join(Path.home(), "AppData", "Local")
-    return os.path.join(localappdir, "srag", "folders.db")
+    return os.path.join(_local_app_dir(), "srag", "folders.db")
 
 
 def _default_log_path() -> str:
@@ -96,15 +115,65 @@ class Config:
     enrichment_overlap: int = _DEFAULTS["enrichment_overlap"]
     # Search (FD-02)
     top_k: int = 10
+    search_top_k: int = 10
+    search_min_score: float = 0.0
     # Logging (DD-03 / FD-07)
     log_level: str = _DEFAULTS["log_level"]
+    log_file: str = field(default_factory=_default_log_path)
+
+    # Ingest settings (from config.yaml ingest section)
+    ingest_chunk_size: int = 768
+    ingest_chunk_overlap: int = 64
+
+    # LLM settings (from config.yaml llm section)
+    llm_timeout: float = 30.0
+    llm_max_tokens: int = 2048
+    llm_enrichment: str = "anthropic/claude-sonnet-5"
+    llm_rewrite: str = "ollama/qwen3:4b"
+    llm_rerank: str = "anthropic/claude-sonnet-5"
+    llm_eval: str = "anthropic/claude-sonnet-5"
+
+    # Server settings (from config.yaml server section)
+    server_host: str = "0.0.0.0"
+    server_port: int = 9000
+
+    # MCP settings (from config.yaml mcp section)
+    mcp_transport: str = "stdio"
+    mcp_enabled: bool = True
+    mcp_log_level: str = "INFO"
+
+    # Search settings (from config.yaml search section)
+    search_rewrite_enabled: bool = True
+    search_rerank_enabled: bool = True
+    search_retrieval_k: int = 20
+    search_final_k: int = 10
+
+    # Chunking settings (from config.yaml chunking section)
+    chunking_max_tokens: int = 768
+    chunking_overlap: int = 64
+
+    # Anthropic settings (from config.yaml anthropic section)
+    anthropic_base_url: str = ""
+
+    # Enrichment settings (from config.yaml enrichment section)
+    enrichment_enabled: bool = False
+    enrichment_workers: int = 1
+
+    # Sync settings (from config.yaml sync section)
+    sync_interval_minutes: int = 30
+    sync_auto_start: bool = True
+
+    # Pipeline settings (from config.yaml pipeline section)
+    pipeline_embed_batch_size: int = 50
+    pipeline_max_retries: int = 3
 
     # ChromaDB path (DD-04)
     chromadb_path: str = field(default_factory=_default_chromadb_path)
+    # ChromaDB tenant and database (FD-08)
+    chromadb_tenant: str = "default_tenant"
+    chromadb_database: str = "default_database"
     # Folders DB path (DD-04)
     folders_db_path: str = field(default_factory=_default_folders_db_path)
-    # Log file path
-    log_file: str = _DEFAULTS["log_path"]
 
     # Runtime-only config patches (FD-06 — not persisted)
     _runtime_patches: Dict[str, Any] = field(default_factory=dict)
@@ -125,6 +194,12 @@ _ENV_MAPPING: List[tuple] = [
     ("ollama_timeout", "SRAG_OllAMA_TIMEOUT", int),
     ("embedding_dim", "SRAG_EMBEDDING_DIM", int),
     ("top_k", "SRAG_TOP_K", int),
+    # Documented in USAGE.md but previously missing from this table.
+    ("chromadb_path", "SRAG_CHROMADB_PATH", str),
+    ("chromadb_tenant", "SRAG_CHROMADB_TENANT", str),
+    ("chromadb_database", "SRAG_CHROMADB_DATABASE", str),
+    ("log_level", "SRAG_LOG_LEVEL", str),
+    ("server_port", "SRAG_SERVER_PORT", int),
 ]
 
 
@@ -135,6 +210,12 @@ def _expand_env_vars(value: Any) -> Any:
 
     def _replace(match: re.Match) -> str:
         var_name = match.group(1) or match.group(2).lstrip("$")
+        if var_name == "LOCALAPPDATA" and "LOCALAPPDATA" not in os.environ:
+            # Not a real env var on macOS/Linux - substituting "" here would
+            # turn "${LOCALAPPDATA}/srag/chromadb" into "/srag/chromadb"
+            # (filesystem root, unwritable). Resolve the platform-correct
+            # equivalent instead so config.yaml's template works everywhere.
+            return _local_app_dir()
         env_val = os.environ.get(var_name, "")
         # Recursive expansion guard (max 8 levels)
         if "${" in env_val or "$" in env_val:
@@ -143,6 +224,30 @@ def _expand_env_vars(value: Any) -> Any:
 
     expanded = _ENV_VAR_PATTERN.sub(_replace, value)
     return expanded
+
+
+
+
+def _flatten_yaml(node: Any, prefix: str = "") -> Dict[str, Any]:
+    """Flatten nested YAML dicts into top-level keys."""
+    result: Dict[str, Any] = {}
+    if not isinstance(node, dict):
+        return result
+
+    for key, value in node.items():
+        full_key = f"{prefix}.{key}" if prefix else str(key)
+        if isinstance(value, dict):
+            sub = _flatten_yaml(value, full_key)
+            result.update(sub)
+        else:
+            # Store with flattened keys like "server.port", then also strip to just the last part
+            result[full_key] = value
+            # Also store as flat key for Config compatibility
+            parts = full_key.split(".")
+            if len(parts) > 1:
+                result[parts[-1]] = value  # e.g., "server.port" -> use "port"
+
+    return result
 
 
 def _apply_env_overrides(cfg_dict: Dict[str, Any]) -> Dict[str, Any]:
@@ -231,7 +336,23 @@ def load_config(yaml_path: str = "config.yaml") -> Config:
                 return _expand_env_vars(node)
             return node
 
-        config_dict.update(_expand_node(yaml_data))
+        flattened = _expand_node(yaml_data)
+        # Flatten nested sections (e.g., "server" → server_host, server_port, etc.)
+        nested_sections = {
+            "server": "server_", "chromadb": "chromadb_", "ingest": "ingest_",
+            "search": "search_", "llm": "llm_", "logging": "log_", "mcp": "mcp_",
+            "chunking": "chunking_", "anthropic": "anthropic_", "enrichment": "enrichment_",
+            "sync": "sync_", "pipeline": "pipeline_",
+        }
+        flat = {}
+        for key, val in flattened.items():
+            prefix = nested_sections.get(key)
+            if prefix and isinstance(val, dict):
+                for k, v in val.items():
+                    flat[f"{prefix}{k}"] = v
+            else:
+                flat[key] = val
+        config_dict.update(flat)
     else:
         # YAML not found — log warning and use defaults + env vars only
         print(f"Warning: {yaml_path} not found, using default values.")
@@ -245,11 +366,23 @@ def load_config(yaml_path: str = "config.yaml") -> Config:
         error_msg = "Configuration validation failed:\n" + "\n".join(f"  - {e}" for e in validation_errors)
         raise ValueError(error_msg)
 
-    # Resolve paths (DD-04): expand relative paths to absolute
+    # Resolve paths (DD-04): expand relative paths to absolute.
+    # Only rewrite keys actually present — otherwise this would clobber a
+    # field's own default_factory (e.g. folders_db_path) with abspath("").
     for path_key in ("chromadb_path", "folders_db_path", "log_file"):
-        val = config_dict.get(path_key, "")
-        if isinstance(val, str) and not os.path.isabs(val):
+        if path_key not in config_dict:
+            continue
+        val = config_dict[path_key]
+        if isinstance(val, str) and val and not os.path.isabs(val):
             config_dict[path_key] = os.path.abspath(val)
+
+    # Safety net: drop any key that isn't a declared Config field so an
+    # unexpected/legacy config.yaml section can't crash startup outright.
+    valid_keys = {f.name for f in dataclasses_fields(Config)}
+    unknown_keys = set(config_dict) - valid_keys
+    if unknown_keys:
+        print(f"Warning: ignoring unknown config key(s): {sorted(unknown_keys)}")
+        config_dict = {k: v for k, v in config_dict.items() if k in valid_keys}
 
     return Config(**config_dict)
 

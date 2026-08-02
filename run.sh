@@ -1,74 +1,47 @@
 #!/usr/bin/env bash
-# SRAG Phase 1 startup script (FD-85).
-# Launches the SRAG application — web server, MCP server, and optional eval runner.
+# SRAG Run Script — Web UI / MCP server entry point (macOS/Linux).
+# Mirrors run.bat's behavior. Run install.sh once first to set up .venv.
+#
 # Usage:
-#   ./run.sh              # Run all services
-#   ./run.sh web          # Run only the web server
-#   ./run.sh mcp          # Run only the MCP server
-#   ./run.sh eval         # Run evaluation (requires test dataset)
+#   ./run.sh          # Web UI on http://localhost:9000
+#   ./run.sh mcp       # MCP server over stdio
 
 set -euo pipefail
+cd "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
-
-# --- venv bootstrap ----------------------------------------------------------
-if [ ! -d ".venv" ]; then
-    echo "Creating virtual environment..."
-    python3 -m venv .venv
-fi
-
-source ".venv/bin/activate"
-
-echo "Installing dependencies (first run only)..."
-pip install -q -e . 2>/dev/null || pip install -q .
-
-# --- config -------------------------------------------------------------------
-export SRAG_CONFIG="${SRAG_CONFIG:-./config.yaml}"
-export SRAG_LOG_FILE="${SRAG_LOG_FILE:-./logs/srag.log}"
-
-# --- helper ------------------------------------------------------------------
-run_web() {
-    echo "=== Starting SRAG web server on :9001 ==="
-    uvicorn "web.app:create_app" \
-        "--app-dir" "." \
-        --factory \
-        --host 0.0.0.0 \
-        --port 9001 \
-        --log-config "$(dirname "$0")/log_config.py"
+free_port() {
+    local port="$1"
+    local pids
+    pids="$(lsof -ti tcp:"$port" 2>/dev/null || true)"
+    if [ -n "$pids" ]; then
+        echo "Port $port is already in use by PID(s) $pids - stopping them..."
+        # Kill each listener's whole process group, not just the listed PID:
+        # uvicorn --reload spawns its actual worker as a separate child
+        # process (see run.bat's equivalent /T note) - killing only the
+        # reloader would leave that child orphaned and still holding the port.
+        for pid in $pids; do
+            pkill -9 -P "$pid" 2>/dev/null || true
+            kill -9 "$pid" 2>/dev/null || true
+        done
+    fi
 }
 
-run_mcp() {
-    echo "=== Starting SRAG MCP server ==="
-    python -m mcp_server.server
-}
-
-run_eval() {
-    echo "=== Running retrieval evaluation ==="
-    echo "Requires eval/test_dataset.jsonl and a running Ollama instance."
-    python -c "from eval import runner; print('Evaluation runner stub')"
-}
-
-# --- main --------------------------------------------------------------------
-case "${1:-all}" in
-    web)
-        run_web
+case "${1:-web}" in
+    web|"")
+        free_port 9000
+        echo "Starting web UI at http://localhost:9000..."
+        # uv run resolves this project's own .venv regardless of what's on
+        # PATH - matches run.bat's use of "uv run python" over a bare
+        # "python" call, which would depend on the venv already being
+        # activated in this shell.
+        exec uv run python -m uvicorn web.app:create_app --factory --host 0.0.0.0 --port 9000 --reload
         ;;
     mcp)
-        run_mcp
-        ;;
-    eval)
-        run_eval
-        ;;
-    all|"")
-        echo "=== SRAG Phase 1 — Skeleton + Logging ==="
-        echo "Config : $SRAG_CONFIG"
-        echo "Log    : $SRAG_LOG_FILE"
-        echo "Web UI : http://localhost:9001/ui"
-        run_web
+        echo "Starting MCP server..."
+        exec uv run python -m mcp_server.server
         ;;
     *)
-        echo "Usage: $0 {all|web|mcp|eval}" >&2
+        echo "Usage: $0 [web|mcp]" >&2
         exit 1
         ;;
 esac
