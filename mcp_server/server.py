@@ -78,8 +78,8 @@ def main() -> None:
     # File logging only - MCP's stdio transport uses stdout for the JSON-RPC
     # protocol itself, so a console log handler there would interleave log
     # lines with protocol messages and corrupt the stream.
-    from config import load_config
-    from log import setup_logging
+    from core.config import load_config
+    from core.log import setup_logging
     cfg = load_config()
     setup_logging(level=cfg.log_level, log_file=cfg.log_file, enable_console=False)
 

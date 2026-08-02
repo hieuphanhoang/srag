@@ -128,7 +128,7 @@ def _dict_to_result(d: dict[str, Any]) -> Any:
     """
     if "distance" in d or "collection" in d:
         try:
-            from models import SearchResult
+            from core.models import SearchResult
             metadata = d.get("metadata", {}) or {}
             sources_data = d.pop("_sources", None)
 

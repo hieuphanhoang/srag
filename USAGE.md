@@ -216,7 +216,7 @@ Environment variable overrides (take precedence over `config.yaml`):
 | `SRAG_LOG_LEVEL` | `logging.level` |
 | `SRAG_SERVER_PORT` | `server.port` |
 
-(The two `*(sic)*` entries have inconsistent capitalization in the actual code — not a typo in this doc, matching what `config.py` actually checks.)
+(The two `*(sic)*` entries have inconsistent capitalization in the actual code — not a typo in this doc, matching what `core/config.py` actually checks.)
 
 ## Running Tests
 
@@ -235,13 +235,14 @@ uv run pytest tests/
 
 ```
 srag/
-├── config.yaml                # all settings
-├── config.py                  # config loader, ${VAR} expansion, validation
-├── models.py                  # SearchResult, ChunkWithMetadata, generate_chunk_id
-├── log.py                     # logging setup (console + JSON-lines file)
-├── embedding.py                # Ollama embedding client wrapper
-├── install.bat / install.sh   # one-time environment setup (uv, deps, Ollama model, MCP)
-├── run.bat / run.sh            # start the web UI or MCP server
+├── config.yaml                 # all settings
+├── install.bat / install.sh    # one-time environment setup (uv, deps, Ollama model, MCP)
+├── run.bat / run.sh              # start the web UI or MCP server
+├── core/                         # foundation modules, imported everywhere else
+│   ├── config.py                  # config loader, ${VAR} expansion, validation
+│   ├── models.py                  # SearchResult, ChunkWithMetadata, generate_chunk_id
+│   ├── log.py                     # logging setup (console + JSON-lines file)
+│   └── embedding.py                # Ollama embedding client wrapper
 ├── store/
 │   └── chromadb_store.py      # ChromaDB wrapper, multi-collection search + merge
 ├── ingest/

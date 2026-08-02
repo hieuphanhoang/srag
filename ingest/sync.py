@@ -15,7 +15,7 @@ from typing import Any, Optional
 from ingest.folder_registry import FileEntry, FolderConfig, FolderRegistry, ScanMode, collection_name_for_path
 from ingest.pipeline import IngestCancelled, IngestResult, run as run_pipeline
 from ingest.converter import DocumentConverter
-from embedding import Embedder
+from core.embedding import Embedder
 from store.chromadb_store import ChromaStore
 
 logger = logging.getLogger(__name__)

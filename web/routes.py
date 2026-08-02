@@ -16,7 +16,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
-from config import patch_config
+from core.config import patch_config
 from ingest.folder_registry import FolderConfig, FolderRegistry, collection_name_for_path
 from ingest.scanner import scan_folder as scan_folder_files
 from web.dependencies import (

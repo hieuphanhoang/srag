@@ -21,8 +21,8 @@ from ingest.chunker import TextChunker, Chunk
 from ingest.converter import DocumentConverter
 from ingest.scanner import FileScanner
 from llm.enricher import EnrichmentClient as Enricher
-from embedding import Embedder
-from models import generate_chunk_id
+from core.embedding import Embedder
+from core.models import generate_chunk_id
 from store.chromadb_store import ChromaStore
 
 logger = logging.getLogger(__name__)
@@ -309,11 +309,11 @@ def run(
 if __name__ == "__main__":
     import sys
 
-    from config import load_config
+    from core.config import load_config
     from ingest.converter import ConverterManager
     from ingest.folder_registry import collection_name_for_path
-    from embedding import get_embedder
-    from log import setup_logging
+    from core.embedding import get_embedder
+    from core.log import setup_logging
 
     if len(sys.argv) < 2:
         print("Usage: uv run python -m ingest.pipeline <folder_path>")

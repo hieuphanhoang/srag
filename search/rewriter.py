@@ -60,7 +60,7 @@ class QueryRewriter:
             # Read from config.yaml. Config is a flat dataclass (llm_rewrite,
             # llm_rerank, ...) - there is no nested cfg.llm.search.
             try:
-                from config import load_config
+                from core.config import load_config
                 cfg = load_config()
                 spec = getattr(cfg, 'llm_rewrite', None)
             except Exception as exc:
