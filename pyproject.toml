@@ -1,0 +1,25 @@
+[project]
+name = "srag"
+requires-python = ">=3.12"
+dependencies = [
+    "anthropic>=0.116.0",
+    "chromadb>=1.5.9",
+    "fastapi>=0.139.0",
+    # PINNED — see FD.md §6 Constants. Newer markitdown regresses PDF text
+    # extraction on watermarked PDFs (emits reversed text). All four extras
+    # are required or .docx/.pptx/.xlsx silently fail to convert.
+    "markitdown[docx,pdf,pptx,xlsx]==0.1.5",
+    "mcp[cli]>=1.28.1",
+    "ollama>=0.6.2",
+    "pdfminer-six==20251230",
+    "pyyaml>=6.0.3",
+    "tiktoken>=0.13.0",
+    "uvicorn>=0.50.2",
+]
+
+[dependency-groups]
+dev = ["httpx>=0.28.1", "pytest>=9.1.1", "reportlab>=5.0.0"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+markers = ["integration: requires external services (Ollama, ChromaDB)"]

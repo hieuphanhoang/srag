@@ -1,0 +1,37 @@
+chromadb_path: "${LOCALAPPDATA}/srag/chromadb"
+chromadb_tenant: "default_tenant"
+chromadb_database: "default_database"
+ollama_url: "http://localhost:11434"
+embedding_model: "qwen3-embedding"
+server:
+  port: 9001
+mcp:
+  transport: "stdio"
+search:
+  top_k: 10
+  rewrite_enabled: true
+  rerank_enabled: true
+  retrieval_k: 20
+  final_k: 10
+chunking:
+  max_tokens: 768
+  overlap: 64
+llm:
+  enrichment: "anthropic/claude-sonnet-5"
+  rewrite: "ollama/qwen3:4b"
+  rerank: "anthropic/claude-sonnet-5"
+  eval: "anthropic/claude-sonnet-5"
+anthropic:
+  base_url: ""
+enrichment:
+  enabled: false
+  workers: 1
+sync:
+  interval_minutes: 30
+  auto_start: true
+pipeline:
+  embed_batch_size: 50
+  max_retries: 3
+logging:
+  level: "INFO"
+  file: "./logs/srag.log"
