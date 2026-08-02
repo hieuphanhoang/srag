@@ -56,7 +56,7 @@ class Reranker:
             # Read from config. Config is a flat dataclass (llm_rewrite,
             # llm_rerank, ...) - there is no nested cfg.llm.rerank.
             try:
-                from config import load_config
+                from core.config import load_config
                 cfg = load_config()
                 spec = getattr(cfg, 'llm_rerank', None)
             except Exception as exc:
@@ -274,7 +274,7 @@ class Reranker:
         # If it looks like a SearchResult, preserve its structure
         if "distance" in d or "collection" in d:
             try:
-                from models import SearchResult
+                from core.models import SearchResult
                 metadata = d.get("metadata", {})
                 return SearchResult(
                     text=d.get("text", ""),

@@ -25,7 +25,7 @@ def create_app() -> FastAPI:
     """Application factory — creates and configures the FastAPI app."""
     # Configure logging first (file + console) so nothing logged during the
     # rest of startup — including this function's own log lines — is lost.
-    from log import setup_logging
+    from core.log import setup_logging
     cfg = get_config()
     setup_logging(level=cfg.log_level, log_file=cfg.log_file)
 

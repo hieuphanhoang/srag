@@ -113,7 +113,7 @@ def create_client(spec: str | None = None) -> LLMProvider:
     base_url = None
     api_key = None
     try:
-        from config import load_config
+        from core.config import load_config
         cfg = load_config()
         name = provider_name.lower().strip()
         if name in ("ollama", "oll"):

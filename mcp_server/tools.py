@@ -11,8 +11,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-from config import load_config
-from embedding import get_embedder
+from core.config import load_config
+from core.embedding import get_embedder
 from llm.factory import create_client as get_llm_client
 from store.chromadb_store import SearchResult, ChromaStore
 

@@ -79,19 +79,21 @@ This is a hand-rolled version of a well-known pattern, not a novel one — no fr
 
 ```
 srag/
-├── config.yaml / config.py    # settings + loader
-├── models.py                  # SearchResult, ChunkWithMetadata
-├── log.py                     # logging setup (console + JSON-lines file)
-├── embedding.py                # Ollama embedding client
-├── install.bat / install.sh   # one-time environment setup
-├── run.bat / run.sh            # start the web UI or MCP server
-├── store/                      # ChromaDB wrapper (multi-collection)
-├── ingest/                     # scan → convert → chunk → embed → store (+ sync, retry)
-├── llm/                        # Ollama/Anthropic providers + factory + enrichment
-├── search/                     # query rewrite, result merge, reranking
-├── mcp_server/                 # MCP tools & stdio server
-├── web/                        # FastAPI server, REST API, SPA UI
-└── tests/                      # unit + integration tests (272 total)
+├── config.yaml                 # settings
+├── install.bat / install.sh    # one-time environment setup
+├── run.bat / run.sh             # start the web UI or MCP server
+├── core/                        # foundation modules, imported everywhere else
+│   ├── config.py                #   settings loader
+│   ├── models.py                #   SearchResult, ChunkWithMetadata
+│   ├── log.py                   #   logging setup (console + JSON-lines file)
+│   └── embedding.py              #   Ollama embedding client
+├── store/                       # ChromaDB wrapper (multi-collection)
+├── ingest/                      # scan → convert → chunk → embed → store (+ sync, retry)
+├── llm/                         # Ollama/Anthropic providers + factory + enrichment
+├── search/                      # query rewrite, result merge, reranking
+├── mcp_server/                  # MCP tools & stdio server
+├── web/                         # FastAPI server, REST API, SPA UI
+└── tests/                       # unit + integration tests (272 total)
 ```
 
 ## Configuration
